@@ -1,0 +1,474 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum Role {
+  ADMIN
+  PHARMACIST
+  COUNSELLOR
+  OPERATOR
+  VIEWER
+}
+
+enum Language {
+  en
+  te
+  hi
+}
+
+enum ScheduleStatus {
+  DRAFT
+  VERIFIED
+  ACTIVE
+  PAUSED
+  SUPERSEDED
+}
+
+enum SlotCode {
+  MORNING
+  AFTERNOON
+  NIGHT
+}
+
+enum RunStatus {
+  GENERATING
+  GENERATED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+}
+
+enum RevisionOrigin {
+  AI_GENERATED
+  PHARMACIST_EDIT
+}
+
+enum CorpusStatus {
+  DRAFT
+  APPROVED
+  SUPERSEDED
+}
+
+enum CallStatus {
+  PENDING
+  DIALING
+  ANSWERED
+  NO_ANSWER
+  BUSY
+  FAILED
+  CANCELLED
+}
+
+enum CallMeaning {
+  TAKEN
+  NOT_TAKEN
+  COUNSELLING
+  OTHER_QUERY
+}
+
+model Profile {
+  id        String     @id @default(uuid())
+  email     String     @unique
+  fullName  String     @map("full_name")
+  role      Role       @default(OPERATOR)
+  isActive  Boolean    @default(true) @map("is_active")
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
+  audits    AuditLog[]
+
+  @@map("profiles")
+}
+
+model Patient {
+  id                 String               @id @default(uuid())
+  patientCode        String               @unique @map("patient_code")
+  fullName           String               @map("full_name")
+  age                Int
+  gender             String
+  phoneE164          String               @map("phone_e164")
+  address            String?
+  languagePreference Language             @default(en) @map("language_preference")
+  consentStatus      String               @default("PENDING") @map("consent_status")
+  createdBy          String?              @map("created_by")
+  createdAt          DateTime             @default(now()) @map("created_at")
+  updatedAt          DateTime             @updatedAt @map("updated_at")
+  conditions         PatientCondition[]
+  histories          MedicalHistory[]
+  allergies          Allergy[]
+  lifestyles         Lifestyle[]
+  clinicals          ClinicalParameter[]
+  consents           Consent[]
+  prescriptions      Prescription[]
+  schedules          MedicationSchedule[]
+  counsellingRuns    CounsellingRun[]
+  documents          Document[]
+  reminderEvents     ReminderEvent[]
+  followUps          FollowUpRequest[]
+
+  @@index([fullName])
+  @@map("patients")
+}
+
+model PatientCondition {
+  id            String    @id @default(uuid())
+  patientId     String    @map("patient_id")
+  conditionCode String    @map("condition_code")
+  diagnosedOn   DateTime? @map("diagnosed_on")
+  status        String    @default("ACTIVE")
+  patient       Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@unique([patientId, conditionCode])
+  @@map("patient_conditions")
+}
+
+model MedicalHistory {
+  id           String   @id @default(uuid())
+  patientId    String   @map("patient_id")
+  category     String
+  description  String
+  recordedYear Int?     @map("recorded_year")
+  patient      Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@map("medical_histories")
+}
+
+model Allergy {
+  id        String  @id @default(uuid())
+  patientId String  @map("patient_id")
+  substance String
+  reaction  String?
+  severity  String?
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@map("allergies")
+}
+
+model Lifestyle {
+  id              String  @id @default(uuid())
+  patientId       String  @map("patient_id")
+  alcohol         String?
+  smoking         String?
+  dietType        String? @map("diet_type")
+  physicalActivity String? @map("physical_activity")
+  sleepHours      Int?    @map("sleep_hours")
+  stressLevel     String? @map("stress_level")
+  notes           String?
+  patient         Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@map("lifestyles")
+}
+
+model ClinicalParameter {
+  id                String   @id @default(uuid())
+  patientId         String   @map("patient_id")
+  recordedAt        DateTime @default(now()) @map("recorded_at")
+  bpSystolic        Int?     @map("bp_systolic")
+  bpDiastolic       Int?     @map("bp_diastolic")
+  fastingGlucose    Float?   @map("fasting_glucose")
+  postprandialGlucose Float? @map("postprandial_glucose")
+  hba1c             Float?
+  totalChol         Float?   @map("total_chol")
+  ldl               Float?
+  hdl               Float?
+  triglycerides     Float?
+  heightCm          Float?   @map("height_cm")
+  weightKg          Float?   @map("weight_kg")
+  bmi               Float?
+  otherResults      Json?    @map("other_results")
+  patient           Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@map("clinical_parameters")
+}
+
+model Prescription {
+  id           String            @id @default(uuid())
+  patientId    String            @map("patient_id")
+  prescribedOn DateTime          @map("prescribed_on")
+  prescriber   String?           @map("prescriber_name")
+  status       String            @default("DRAFT")
+  verifiedBy   String?           @map("verified_by")
+  verifiedAt   DateTime?         @map("verified_at")
+  patient      Patient           @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  items        PrescriptionItem[]
+
+  @@map("prescriptions")
+}
+
+model PrescriptionItem {
+  id                 String        @id @default(uuid())
+  prescriptionId     String        @map("prescription_id")
+  medicineName       String        @map("medicine_name")
+  strength           String
+  doseText           String        @map("dose_text")
+  frequencyCode      String        @map("frequency_code")
+  route              String        @default("ORAL")
+  durationDays       Int?          @map("duration_days")
+  timingCode         String        @default("UNSPECIFIED") @map("timing_code")
+  explicitTimes      String[]      @map("explicit_times")
+  specialInstructions String?      @map("special_instructions")
+  isVerified         Boolean       @default(false) @map("is_verified")
+  prescription       Prescription  @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+  slots              ScheduleSlot[]
+
+  @@map("prescription_items")
+}
+
+model MedicationSchedule {
+  id          String         @id @default(uuid())
+  patientId   String         @map("patient_id")
+  prescriptionId String      @map("prescription_id")
+  status      ScheduleStatus @default(DRAFT)
+  verifiedBy  String?        @map("verified_by")
+  verifiedAt  DateTime?      @map("verified_at")
+  activatedAt DateTime?      @map("activated_at")
+  timezone    String         @default("Asia/Kolkata")
+  patient     Patient        @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  slots       ScheduleSlot[]
+
+  @@map("medication_schedules")
+}
+
+model ScheduleSlot {
+  id                 String            @id @default(uuid())
+  scheduleId         String            @map("schedule_id")
+  prescriptionItemId String            @map("prescription_item_id")
+  slotCode           SlotCode          @map("slot_code")
+  scheduledTime      DateTime?         @map("scheduled_time")
+  doseText           String            @map("dose_text")
+  timingCode         String            @map("timing_code")
+  instructions       String?
+  source             String            @default("FREQUENCY_RULE")
+  needsReview        Boolean           @default(false) @map("needs_review")
+  isActive           Boolean           @default(true) @map("is_active")
+  schedule           MedicationSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  item               PrescriptionItem  @relation(fields: [prescriptionItemId], references: [id])
+  reminders          ReminderEvent[]
+
+  @@index([scheduleId])
+  @@map("schedule_slots")
+}
+
+model CounsellingRun {
+  id                String              @id @default(uuid())
+  patientId         String              @map("patient_id")
+  scheduleId        String?             @map("schedule_id")
+  kbReleaseId       String?             @map("kb_release_id")
+  model             String?
+  promptVersion     String?             @map("prompt_version")
+  status            RunStatus           @default(GENERATING)
+  warnings          Json?
+  sources           Json?
+  inputSnapshot     Json?               @map("input_snapshot")
+  createdBy         String?             @map("created_by")
+  approvedBy        String?             @map("approved_by")
+  approvedAt        DateTime?           @map("approved_at")
+  approvedRevisionId String?            @unique @map("approved_revision_id")
+  rejectedBy        String?             @map("rejected_by")
+  rejectedAt        DateTime?           @map("rejected_at")
+  rejectionReason   String?             @map("rejection_reason")
+  patient           Patient             @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  revisions         CounsellingRevision[] @relation("RunRevisions")
+  approvedRevision  CounsellingRevision? @relation("ApprovedRevision", fields: [approvedRevisionId], references: [id])
+  sections          CounsellingSection[]
+  documents         Document[]
+
+  @@map("counselling_runs")
+}
+
+model CounsellingRevision {
+  id               String              @id @default(uuid())
+  runId            String              @map("run_id")
+  versionNo        Int                 @map("version_no")
+  origin           RevisionOrigin
+  parentRevisionId String?             @map("parent_revision_id")
+  sectionsJson     Json                @map("sections_json")
+  note             String?
+  isApproved       Boolean             @default(false) @map("is_approved")
+  createdBy        String?             @map("created_by")
+  createdAt        DateTime            @default(now()) @map("created_at")
+  run              CounsellingRun      @relation("RunRevisions", fields: [runId], references: [id], onDelete: Cascade)
+  approvedFor      CounsellingRun?     @relation("ApprovedRevision")
+  sections         CounsellingSection[]
+  documents        Document[]
+
+  @@unique([runId, versionNo])
+  @@map("counselling_revisions")
+}
+
+model CounsellingSection {
+  id         String              @id @default(uuid())
+  runId      String              @map("run_id")
+  revisionId String              @map("revision_id")
+  sectionKey String              @map("section_key")
+  language   Language            @default(en)
+  title      String
+  content    String
+  citations  Json?
+  sortOrder  Int                 @default(0) @map("sort_order")
+  run        CounsellingRun      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  revision   CounsellingRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+
+  @@unique([revisionId, sectionKey, language])
+  @@map("counselling_sections")
+}
+
+model Document {
+  id                   String              @id @default(uuid())
+  patientId            String              @map("patient_id")
+  counsellingRunId     String              @map("counselling_run_id")
+  counsellingRevisionId String             @map("counselling_revision_id")
+  language             Language            @default(en)
+  version              Int                 @default(1)
+  storagePath          String              @map("storage_path")
+  status               String              @default("DRAFT")
+  approvedBy           String?             @map("approved_by")
+  approvedAt           DateTime?           @map("approved_at")
+  patient              Patient             @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  counsellingRun       CounsellingRun      @relation(fields: [counsellingRunId], references: [id])
+  revision             CounsellingRevision @relation(fields: [counsellingRevisionId], references: [id])
+
+  @@map("documents")
+}
+
+model KnowledgeRelease {
+  id                String              @id @default(uuid())
+  releaseCode       String              @unique @map("release_code")
+  status            CorpusStatus        @default(DRAFT)
+  approvalAuthority String?             @map("approval_authority")
+  approvedBy        String?             @map("approved_by")
+  approvedAt        DateTime?           @map("approved_at")
+  effectiveDate     DateTime?           @map("effective_date")
+  sourceReferences  Json?               @map("source_references")
+  revisionHistory   Json?               @map("revision_history")
+  notes             String?
+  documents         KnowledgeDocument[]
+  chunks            KnowledgeChunk[]
+
+  @@map("knowledge_releases")
+}
+
+model KnowledgeDocument {
+  id               String           @id @default(uuid())
+  releaseId        String           @map("release_id")
+  title            String
+  documentNumber   String?          @map("document_number")
+  versionNumber    String?          @map("version_number")
+  sourceName       String?          @map("source_name")
+  sourceReferences Json?            @map("source_references")
+  category         String
+  conditionCode    String?          @map("condition_code")
+  language         Language         @default(en)
+  effectiveDate    DateTime?        @map("effective_date")
+  approvalAuthority String?         @map("approval_authority")
+  approvedBy       String?          @map("approved_by")
+  approvedAt       DateTime?        @map("approved_at")
+  revisionHistory  Json?            @map("revision_history")
+  isActive         Boolean          @default(true) @map("is_active")
+  filePath         String?          @map("file_path")
+  release          KnowledgeRelease @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+  chunks           KnowledgeChunk[]
+
+  @@map("knowledge_documents")
+}
+
+model KnowledgeChunk {
+  id         String           @id @default(uuid())
+  documentId String           @map("document_id")
+  releaseId  String           @map("release_id")
+  chunkIndex Int              @map("chunk_index")
+  content    String
+  embedding  Unsupported("vector(768)")?
+  metadata   Json?
+  document   KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  release    KnowledgeRelease  @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+
+  @@index([documentId, chunkIndex])
+  @@map("knowledge_chunks")
+}
+
+model Consent {
+  id                  String   @id @default(uuid())
+  patientId           String   @map("patient_id")
+  type                String   @default("REMINDER_CALLS_AND_DATA_PROCESSING")
+  checkboxTextSnapshot String  @map("checkbox_text_snapshot")
+  granted             Boolean
+  grantedAt           DateTime @default(now()) @map("granted_at")
+  grantedBy           String?  @map("granted_by")
+  ip                  String?
+  revokedAt           DateTime? @map("revoked_at")
+  formPath            String?  @map("form_path")
+  patient             Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@map("consents")
+}
+
+model ReminderEvent {
+  id            String        @id @default(uuid())
+  patientId     String        @map("patient_id")
+  scheduleSlotId String       @map("schedule_slot_id")
+  scheduledFor  DateTime      @map("scheduled_for")
+  status        CallStatus    @default(PENDING)
+  attemptNo     Int           @default(1) @map("attempt_no")
+  provider      String        @default("SIMULATOR")
+  callSid       String?       @map("call_sid")
+  startedAt     DateTime?     @map("started_at")
+  endedAt       DateTime?     @map("ended_at")
+  patient       Patient       @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  slot          ScheduleSlot  @relation(fields: [scheduleSlotId], references: [id], onDelete: Cascade)
+  responses     CallResponse[]
+
+  @@unique([scheduleSlotId, scheduledFor, attemptNo])
+  @@index([status, scheduledFor])
+  @@map("reminder_events")
+}
+
+model CallResponse {
+  id              String      @id @default(uuid())
+  reminderEventId String      @map("reminder_event_id")
+  digits          String
+  meaning         CallMeaning
+  payload         Json?
+  recordedAt      DateTime    @default(now()) @map("recorded_at")
+  event           ReminderEvent @relation(fields: [reminderEventId], references: [id], onDelete: Cascade)
+  followUps       FollowUpRequest[]
+
+  @@unique([reminderEventId, digits])
+  @@map("call_responses")
+}
+
+model FollowUpRequest {
+  id             String       @id @default(uuid())
+  patientId      String       @map("patient_id")
+  callResponseId String?      @map("call_response_id")
+  category       String?
+  notes          String?
+  status         String       @default("OPEN")
+  assignedTo     String?      @map("assigned_to")
+  resolvedAt     DateTime?    @map("resolved_at")
+  patient        Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  response       CallResponse? @relation(fields: [callResponseId], references: [id])
+
+  @@map("follow_up_requests")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  actorId    String?  @map("actor_id")
+  action     String
+  entityType String   @map("entity_type")
+  entityId   String?  @map("entity_id")
+  before     Json?
+  after      Json?
+  ip         String?
+  createdAt  DateTime @default(now()) @map("created_at")
+  actor      Profile? @relation(fields: [actorId], references: [id])
+
+  @@index([entityType, entityId])
+  @@map("audit_logs")
+}
